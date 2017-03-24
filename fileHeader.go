@@ -13,8 +13,7 @@ import (
 
 // Errors specific to a File Header Record
 var (
-	ErrRecordType = errors.New("Wrong Record type")
-
+	ErrRecordType       = errors.New("Wrong Record type")
 	ErrRecordSize       = errors.New("Record size is not 094")
 	ErrBlockingFactor   = errors.New("Blocking Factor is not 10")
 	ErrFormatCode       = errors.New("Format Code is not 1.")
@@ -42,7 +41,7 @@ type FileHeader struct {
 	// ImmediateOrigin contains the Routing Number of the ACH Operator or sending
 	// point that is sending the file. The 10 character field begins with
 	// a blank in the first position, followed by the four digit Federal Reserve
-	// Routing Symbol, the four digit ABA Insitution Identifier, and the Check
+	// Routing Symbol, the four digit ABA Institution Identifier, and the Check
 	// Digit (bTTTTAAAAC).
 	ImmediateOrigin int
 
@@ -87,10 +86,10 @@ type FileHeader struct {
 
 	// ReferenceCode is reserved for information pertinent to the Originator.
 	ReferenceCode string
-	// Validator is composed for data validation
-	Validator
-	// Converters is composed for ACH to golang Converters
-	Converters
+	// validator is composed for data validation
+	validator
+	// converters is composed for ACH to golang Converters
+	converters
 }
 
 // NewFileHeader returns a new FileHeader with default values for none exported fields
@@ -164,31 +163,31 @@ func (fh *FileHeader) Validate() error {
 		return err
 	}
 	if fh.recordType != "1" {
-		return ErrRecordType
+		return &ValidateError{FieldName: "recordType", Value: fh.recordType, Err: ErrRecordType}
 	}
 	if err := fh.isUpperAlphanumeric(fh.FileIDModifier); err != nil {
-		return err
+		return &ValidateError{FieldName: "FileIDModifier", Value: fh.FileIDModifier, Err: err}
 	}
 	if len(fh.FileIDModifier) != 1 {
-		return ErrValidFieldLength
+		return &ValidateError{FieldName: "FileIDModifier", Value: fh.FileIDModifier, Err: ErrValidFieldLength}
 	}
 	if fh.recordSize != "094" {
-		return ErrRecordSize
+		return &ValidateError{FieldName: "recordSize", Value: fh.recordSize, Err: ErrRecordSize}
 	}
 	if fh.blockingFactor != "10" {
-		return ErrBlockingFactor
+		return &ValidateError{FieldName: "blockingFactor", Value: fh.blockingFactor, Err: ErrBlockingFactor}
 	}
 	if fh.formatCode != "1" {
-		return ErrFormatCode
+		return &ValidateError{FieldName: "formatCode", Value: fh.formatCode, Err: ErrFormatCode}
 	}
 	if err := fh.isAlphanumeric(fh.ImmediateDestinationName); err != nil {
-		return err
+		return &ValidateError{FieldName: "ImmediateDestinationName", Value: fh.ImmediateDestinationName, Err: err}
 	}
 	if err := fh.isAlphanumeric(fh.ImmediateOriginName); err != nil {
-		return err
+		return &ValidateError{FieldName: "ImmediateOriginName", Value: fh.ImmediateOriginName, Err: err}
 	}
 	if err := fh.isAlphanumeric(fh.ReferenceCode); err != nil {
-		return err
+		return &ValidateError{FieldName: "ReferenceCode", Value: fh.ReferenceCode, Err: err}
 	}
 
 	// todo: handle test cases for before date
@@ -203,25 +202,39 @@ func (fh *FileHeader) Validate() error {
 // fieldInclusion validate mandatory fields are not default values. If fields are
 // invalid the ACH transfer will be returned.
 func (fh *FileHeader) fieldInclusion() error {
-	if fh.recordType == "" ||
-		fh.ImmediateDestination == 0 ||
-		fh.ImmediateOrigin == 0 ||
-		fh.FileCreationDate.IsZero() ||
-		fh.FileIDModifier == "" ||
-		fh.recordSize == "" ||
-		fh.blockingFactor == "" ||
-		fh.formatCode == "" {
-		return ErrValidFieldInclusion
+	if fh.recordType == "" {
+		return &ValidateError{FieldName: "recordType", Value: fh.recordType, Err: ErrRecordType}
+	}
+	if fh.ImmediateDestination == 0 {
+		return &ValidateError{FieldName: "ImmediateDestination", Value: string(fh.ImmediateDestination), Err: ErrValidFieldInclusion}
+	}
+	if fh.ImmediateOrigin == 0 {
+		return &ValidateError{FieldName: "ImmediateOrigin", Value: string(fh.ImmediateOrigin), Err: ErrValidFieldInclusion}
+	}
+	if fh.FileCreationDate.IsZero() {
+		return &ValidateError{FieldName: "FileCreationDate", Value: fh.FileCreationDate.String(), Err: ErrValidFieldInclusion}
+	}
+	if fh.FileIDModifier == "" {
+		return &ValidateError{FieldName: "FileIDModifier", Value: fh.FileIDModifier, Err: ErrRecordType}
+	}
+	if fh.recordSize == "" {
+		return &ValidateError{FieldName: "recordSize", Value: fh.recordSize, Err: ErrRecordType}
+	}
+	if fh.blockingFactor == "" {
+		return &ValidateError{FieldName: "blockingFactor", Value: fh.blockingFactor, Err: ErrRecordType}
+	}
+	if fh.formatCode == "" {
+		return &ValidateError{FieldName: "formatCode", Value: fh.formatCode, Err: ErrRecordType}
 	}
 	return nil
 }
 
-// ImmediateDestinationField gets the immidiate destination number with zero padding
+// ImmediateDestinationField gets the immediate destination number with zero padding
 func (fh *FileHeader) ImmediateDestinationField() string {
 	return " " + fh.numericField(fh.ImmediateDestination, 9)
 }
 
-// ImmediateOriginField gets the immidiate origen number with 0 padding
+// ImmediateOriginField gets the immediate origen number with 0 padding
 func (fh *FileHeader) ImmediateOriginField() string {
 	return " " + fh.numericField(fh.ImmediateOrigin, 9)
 }

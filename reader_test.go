@@ -21,6 +21,12 @@ func TestPPDDebitRead(t *testing.T) {
 	_, err = r.Read()
 	if err != nil {
 		t.Errorf("Can not ach.read file: %v", err)
+		//fmt.Printf("%+v \n", r.File.Batches[0])
+	}
+	err = r.File.ValidateAll()
+	if err != nil {
+		t.Errorf("Could not validate entire read file: %v", err)
+		//fmt.Printf("%+v", r.File)
 	}
 }
 
@@ -52,7 +58,6 @@ func TestMultiBatchFile(t *testing.T) {
 	}
 }
 */
-
 func TestRecordTypeUnknown(t *testing.T) {
 	var line = "301 076401251 0764012510807291511A094101achdestname            companyname                    "
 	r := NewReader(strings.NewReader(line))
@@ -77,15 +82,172 @@ func TestTwoFileControls(t *testing.T) {
 	var line = "9000001000001000000010005320001000000010500000000000000                                       "
 	var twoControls = line + "\n" + line
 	r := NewReader(strings.NewReader(twoControls))
-	batch := Batch{}
+	batch := NewBatch()
 	batch.Control.EntryAddendaCount = 1
 	batch.Control.TotalDebitEntryDollarAmount = 10500
 	r.File.Control.EntryHash = 5320001
-	r.File.addBatch(batch)
+	r.File.AddBatch(batch)
 	_, err := r.Read()
 
 	if !strings.Contains(err.Error(), ErrFileControl.Error()) {
 		t.Errorf("Expected File Control Error got: %v", err)
 	}
+}
 
+func TestFileLineShort(t *testing.T) {
+	var line = "1 line is only 90 characters                                               !"
+	r := NewReader(strings.NewReader(line))
+	_, err := r.Read()
+	if !strings.Contains(err.Error(), ErrRecordLen.Error()) {
+		t.Errorf("Unexpected read.Read() error: %v", err)
+	}
+}
+
+func TestFileLineLong(t *testing.T) {
+	var line = "1 line is only 100 characters                                                        !"
+	r := NewReader(strings.NewReader(line))
+	_, err := r.Read()
+	if !strings.Contains(err.Error(), ErrRecordLen.Error()) {
+		t.Errorf("Unexpected read.Read() error: %v", err)
+	}
+}
+
+// TestFileFileHeaderErr ensure a parse validation error flows back from the parser.
+func TestFileFileHeaderErr(t *testing.T) {
+	fh := mockFileHeader()
+	fh.ImmediateOrigin = 0
+	r := NewReader(strings.NewReader(fh.String()))
+	// necessary to have a file control not nil
+	r.File.Control = mockFileControl()
+	_, err := r.Read()
+	if !strings.Contains(err.Error(), ErrValidFieldInclusion.Error()) {
+		t.Errorf("Unexpected read.Read() error: %v", err)
+	}
+}
+
+// TestFileBatchHeaderErr ensure a parse validation error flows back from the parser.
+func TestFileBatchHeaderErr(t *testing.T) {
+	bh := mockBatchHeader()
+	bh.ODFIIdentification = 0
+	r := NewReader(strings.NewReader(bh.String()))
+	_, err := r.Read()
+	if !strings.Contains(err.Error(), ErrValidFieldInclusion.Error()) {
+		t.Errorf("Unexpected read.Read() error: %v", err)
+	}
+}
+
+// TestFileBatchHeaderErr Error when two batch headers exists in a current batch
+func TestFileBatchHeaderDuplicate(t *testing.T) {
+	bh := mockBatchHeader()
+	r := NewReader(strings.NewReader(bh.String()))
+	r.currentBatch.Header = bh
+	_, err := r.Read()
+	if !strings.Contains(err.Error(), "BatchHeader") {
+		t.Errorf("Unexpected read.Read() error: %v", err)
+	}
+}
+
+// TestFileEntryDetailOutsideBatch ensure EntryDetail does not exist outside of Batch
+func TestFileEntryDetailOutsideBatch(t *testing.T) {
+	ed := mockEntryDetail()
+	r := NewReader(strings.NewReader(ed.String()))
+	_, err := r.Read()
+	if !strings.Contains(err.Error(), ErrEntryOutside.Error()) {
+		t.Errorf("Unexpected read.Read() error: %v", err)
+	}
+}
+
+// TestFileEntryDetail validation error populates through the reader
+func TestFileEntryDetail(t *testing.T) {
+	ed := mockEntryDetail()
+	ed.CheckDigit = 0
+	line := ed.String()
+	r := NewReader(strings.NewReader(line))
+	r.currentBatch.Header = mockBatchHeader()
+	_, err := r.Read()
+	if !strings.Contains(err.Error(), ErrValidFieldInclusion.Error()) {
+		t.Errorf("Unexpected read.Read() error: %v", err)
+	}
+}
+
+// TestFileEntryDetailNotPPD validation error populates through the reader
+func TestFileEntryDetailNotPPD(t *testing.T) {
+	ed := mockEntryDetail()
+	ed.CheckDigit = 0
+	line := ed.String()
+	r := NewReader(strings.NewReader(line))
+	r.currentBatch.SetHeader(mockBatchHeader())
+	r.currentBatch.Header.StandardEntryClassCode = "ABCXYZ"
+	_, err := r.Read()
+	if !strings.Contains(err.Error(), "ABCXYZ") {
+		t.Errorf("Unexpected read.Read() error: %v", err)
+	}
+}
+
+// TestFileAddenda validation error populates through the reader
+func TestFileAddenda(t *testing.T) {
+	bh := mockBatchHeader()
+	ed := mockEntryDetail()
+	addenda := mockAddenda()
+	addenda.SequenceNumber = 0
+	ed.AddAddenda(addenda)
+	line := bh.String() + "\n" + ed.String() + "\n" + ed.Addendums[0].String()
+	r := NewReader(strings.NewReader(line))
+	_, err := r.Read()
+	if !strings.Contains(err.Error(), "Addenda") {
+		t.Errorf("Unexpected read.Read() error: %v", err)
+	}
+}
+
+// TestFileAddendaOutsideBatch validation error populates through the reader
+func TestFileAddendaOutsideBatch(t *testing.T) {
+	addenda := mockAddenda()
+	r := NewReader(strings.NewReader(addenda.String()))
+	_, err := r.Read()
+	if !strings.Contains(err.Error(), ErrAddendaOutside.Error()) {
+		t.Errorf("Unexpected read.Read() error: %v", err)
+	}
+}
+
+// TestFileAddendaNoIndicator
+func TestFileAddendaNoIndicator(t *testing.T) {
+	bh := mockBatchHeader()
+	ed := mockEntryDetail()
+	addenda := mockAddenda()
+	line := bh.String() + "\n" + ed.String() + "\n" + addenda.String()
+	r := NewReader(strings.NewReader(line))
+	_, err := r.Read()
+	if !strings.Contains(err.Error(), ErrAddendaNoIndicator.Error()) {
+		t.Errorf("Unexpected read.Read() error: %v", err)
+	}
+}
+
+func TestFileBatchControlErr(t *testing.T) {
+	bc := mockBatchControl()
+	bc.EntryHash = 0
+	r := NewReader(strings.NewReader(bc.String()))
+	_, err := r.Read()
+	if !strings.Contains(err.Error(), ErrBatchServiceClassMismatch.Error()) {
+		t.Errorf("Unexpected read.Read() error: %v", err)
+	}
+}
+
+func TestFileFileControlErr(t *testing.T) {
+	fc := mockFileControl()
+	fc.BatchCount = 0
+	r := NewReader(strings.NewReader(fc.String()))
+	_, err := r.Read()
+	if !strings.Contains(err.Error(), ErrValidFieldInclusion.Error()) {
+		t.Errorf("Unexpected read.Read() error: %v", err)
+	}
+}
+
+// TestFileLongErr Batch Header Service Class is 000 which does not validate
+func TestFileLongErr(t *testing.T) {
+	line := "101 076401251 0764012510807291511A094101achdestname            companyname                    5000companyname                         origid    PPDCHECKPAYMT000002080730   1076401250000001"
+	r := NewReader(strings.NewReader(line))
+	_, err := r.Read()
+	if !strings.Contains(err.Error(), ErrServiceClass.Error()) {
+		t.Errorf("Unexpected read.Read() error: %v", err)
+	}
 }

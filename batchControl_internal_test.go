@@ -9,11 +9,12 @@ import (
 	"testing"
 )
 
-func mockBatchControl() BatchControl {
+func mockBatchControl() *BatchControl {
 	bc := NewBatchControl()
-	bc.ServiceClassCode = 225
+	bc.ServiceClassCode = 220
+	bc.CompanyIdentification = "123456789"
 	bc.EntryHash = 1
-	bc.ODFIIdentification = 7640125
+	bc.ODFIIdentification = 6200001
 	bc.BatchNumber = 1
 	return bc
 }
@@ -28,7 +29,8 @@ func TestParseBatchControl(t *testing.T) {
 	r.currentBatch.Header.CompanyIdentification = "origid"
 	r.currentBatch.Header.ODFIIdentification = 7640125
 
-	r.currentBatch.addEntryDetail(EntryDetail{TransactionCode: 27, Amount: 10500, RDFIIdentification: 5320001, TraceNumber: 76401255655291})
+	r.currentBatch.AddEntryDetail(&EntryDetail{TransactionCode: 27, Amount: 10500, RDFIIdentification: 5320001, TraceNumber: 76401255655291})
+	//fmt.Printf("%+v \n", r.line)
 	err := r.parseBatchControl()
 	if err != nil {
 		t.Errorf("unknown error: %v", err)
@@ -79,7 +81,7 @@ func TestBCString(t *testing.T) {
 	r.currentBatch.Header.ServiceClassCode = 225
 	r.currentBatch.Header.CompanyIdentification = "origid"
 	r.currentBatch.Header.ODFIIdentification = 7640125
-	r.currentBatch.addEntryDetail(EntryDetail{TransactionCode: 27, Amount: 10500, RDFIIdentification: 5320001, TraceNumber: 76401255655291})
+	r.currentBatch.AddEntryDetail(&EntryDetail{TransactionCode: 27, Amount: 10500, RDFIIdentification: 5320001, TraceNumber: 76401255655291})
 	err := r.parseBatchControl()
 	if err != nil {
 		t.Errorf("unknown error: %v", err)
@@ -102,17 +104,18 @@ func TestValidateBCRecordType(t *testing.T) {
 	}
 }
 
-func TestBCisServiceClassn(t *testing.T) {
+func TestBCisServiceClassErr(t *testing.T) {
 	bc := mockBatchControl()
 	// works properly
 	if err := bc.Validate(); err != nil {
-		t.Errorf("Unexpected Batch.Validation error: %v", err.Error())
+		t.Errorf("Unexpected BatchControl error: %v", err.Error())
 	}
 	// create error is mismatch
 	bc.ServiceClassCode = 123
 	if err := bc.Validate(); err != nil {
-		if err != ErrServiceClass {
-			t.Errorf("Unexpected Batch.Validation error: %v", err.Error())
+		_, ok := err.(*ValidateError)
+		if !ok {
+			t.Errorf("Unexpected BatchControl error: %v", err.Error())
 		}
 	}
 }
@@ -121,13 +124,17 @@ func TestBCFieldInclusion(t *testing.T) {
 	bc := mockBatchControl()
 	// works properly
 	if err := bc.Validate(); err != nil {
-		t.Errorf("Unexpected Batch.Validation error: %v", err.Error())
+		_, ok := err.(*ValidateError)
+		if !ok {
+			t.Errorf("Unexpected BatchControl error: %v", err.Error())
+		}
 	}
 	// create error is mismatch
 	bc.BatchNumber = 0
 	if err := bc.Validate(); err != nil {
-		if err != ErrValidFieldInclusion {
-			t.Errorf("Unexpected Batch.Validation error: %v", err.Error())
+		_, ok := err.(*ValidateError)
+		if !ok {
+			t.Errorf("Unexpected BatchControl error: %v", err.Error())
 		}
 	}
 }
@@ -136,13 +143,17 @@ func TestBCCompanyIdentificationAlphaNumeric(t *testing.T) {
 	bc := mockBatchControl()
 	// works properly
 	if err := bc.Validate(); err != nil {
-		t.Errorf("Unexpected Batch.Validation error: %v", err.Error())
+		_, ok := err.(*ValidateError)
+		if !ok {
+			t.Errorf("Unexpected BatchControl error: %v", err.Error())
+		}
 	}
 	// create error is mismatch
 	bc.CompanyIdentification = "@!"
 	if err := bc.Validate(); err != nil {
-		if err != ErrValidAlphanumeric {
-			t.Errorf("Unexpected Batch.Validation error: %v", err.Error())
+		_, ok := err.(*ValidateError)
+		if !ok {
+			t.Errorf("Unexpected BatchControl error: %v", err.Error())
 		}
 	}
 }
@@ -151,12 +162,49 @@ func TestBCMessageAuthenticationCodeAlphaNumeric(t *testing.T) {
 	bc := mockBatchControl()
 	// works properly
 	if err := bc.Validate(); err != nil {
-		t.Errorf("Unexpected Batch.Validation error: %v", err.Error())
+		_, ok := err.(*ValidateError)
+		if !ok {
+			t.Errorf("Unexpected BatchControl error: %v", err.Error())
+		}
 	}
 	// create error is mismatch
 	bc.MessageAuthenticationCode = "@!"
 	if err := bc.Validate(); err != nil {
-		if err != ErrValidAlphanumeric {
+		_, ok := err.(*ValidateError)
+		if !ok {
+			t.Errorf("Unexpected BatchControl error: %v", err.Error())
+		}
+	}
+}
+
+func TestBCFieldInclusionRecordType(t *testing.T) {
+	bc := mockBatchControl()
+	bc.recordType = ""
+	if err := bc.Validate(); err != nil {
+		_, ok := err.(*ValidateError)
+		if !ok {
+			t.Errorf("Unexpected Batch.Validation error: %v", err.Error())
+		}
+	}
+}
+
+func TestBCFieldInclusionServiceClassCode(t *testing.T) {
+	bc := mockBatchControl()
+	bc.ServiceClassCode = 0
+	if err := bc.Validate(); err != nil {
+		_, ok := err.(*ValidateError)
+		if !ok {
+			t.Errorf("Unexpected Batch.Validation error: %v", err.Error())
+		}
+	}
+}
+
+func TestBCFieldInclusionODFIIdentification(t *testing.T) {
+	bc := mockBatchControl()
+	bc.ODFIIdentification = 0
+	if err := bc.Validate(); err != nil {
+		_, ok := err.(*ValidateError)
+		if !ok {
 			t.Errorf("Unexpected Batch.Validation error: %v", err.Error())
 		}
 	}

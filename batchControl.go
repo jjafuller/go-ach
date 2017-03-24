@@ -1,3 +1,7 @@
+// Copyright 2017 The ACH Authors
+// Use of this source code is governed by an Apache License
+// license that can be found in the LICENSE file.
+
 package ach
 
 import (
@@ -18,7 +22,7 @@ type BatchControl struct {
 	// EntryAddendaCount is a tally of each Entry Detail Record and each Addenda
 	// Record processed, within either the batch or file as appropriate.
 	EntryAddendaCount int
-	// EntryHash the Receiving DFI Identification in each Entry Detail Record is hashed
+	// validate the Receiving DFI Identification in each Entry Detail Record is hashed
 	// to provide a check against inadvertent alteration of data contents due
 	// to hardware failure or program erro
 	//
@@ -57,10 +61,10 @@ type BatchControl struct {
 	// in the Batch Header Record and the Batch Control Record is the same,
 	// the ascending sequence number should be assigned by batch and not by record.
 	BatchNumber int
-	// Validator is composed for data validation
-	Validator
-	// Converters is composed for ACH to golang Converters
-	Converters
+	// validator is composed for data validation
+	validator
+	// converters is composed for ACH to golang Converters
+	converters
 }
 
 // Parse takes the input record string and parses the EntryDetail values
@@ -91,8 +95,8 @@ func (bc *BatchControl) Parse(record string) {
 }
 
 // NewBatchControl returns a new BatchControl with default values for none exported fields
-func NewBatchControl() BatchControl {
-	return BatchControl{
+func NewBatchControl() *BatchControl {
+	return &BatchControl{
 		recordType: "8",
 	}
 }
@@ -121,18 +125,18 @@ func (bc *BatchControl) Validate() error {
 		return err
 	}
 	if bc.recordType != "8" {
-		return ErrRecordType
+		return &ValidateError{FieldName: "recordType", Value: bc.recordType, Err: ErrRecordType}
 	}
 	if err := bc.isServiceClass(bc.ServiceClassCode); err != nil {
-		return ErrServiceClass
+		return &ValidateError{FieldName: "ServiceClassCode", Value: string(bc.ServiceClassCode), Err: ErrServiceClass}
 	}
 
 	if err := bc.isAlphanumeric(bc.CompanyIdentification); err != nil {
-		return err
+		return &ValidateError{FieldName: "CompanyIdentification", Value: bc.CompanyIdentification, Err: err}
 	}
 
 	if err := bc.isAlphanumeric(bc.MessageAuthenticationCode); err != nil {
-		return err
+		return &ValidateError{FieldName: "MessageAuthenticationCode", Value: bc.MessageAuthenticationCode, Err: err}
 	}
 
 	return nil
@@ -141,12 +145,17 @@ func (bc *BatchControl) Validate() error {
 // fieldInclusion validate mandatory fields are not default values. If fields are
 // invalid the ACH transfer will be returned.
 func (bc *BatchControl) fieldInclusion() error {
-	if bc.recordType == "" ||
-		bc.ServiceClassCode == 0 ||
-		bc.EntryHash == 0 ||
-		bc.ODFIIdentification == 0 ||
-		bc.BatchNumber == 0 {
-		return ErrValidFieldInclusion
+	if bc.recordType == "" {
+		return &ValidateError{FieldName: "recordType", Value: bc.recordType, Err: ErrValidFieldInclusion}
+	}
+	if bc.ServiceClassCode == 0 {
+		return &ValidateError{FieldName: "ServiceClassCode", Value: string(bc.ServiceClassCode), Err: ErrValidFieldInclusion}
+	}
+	if bc.ODFIIdentification == 0 {
+		return &ValidateError{FieldName: "ODFIIdentification", Value: string(bc.ODFIIdentification), Err: ErrValidFieldInclusion}
+	}
+	if bc.BatchNumber == 0 {
+		return &ValidateError{FieldName: "BatchNumber", Value: string(bc.BatchNumber), Err: ErrValidFieldInclusion}
 	}
 	return nil
 }
